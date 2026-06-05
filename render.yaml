@@ -9,3 +9,9 @@ services:
       - key: DATABASE_URL
         value: sqlite+aiosqlite:///./crypto.db
     plan: free
+
+  - type: static
+    name: crypto-frontend
+    rootDir: frontend
+    staticPublishPath: .
+    plan: free
