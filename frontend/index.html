@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Analytics</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+    #root { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
+
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; flex-wrap: wrap; gap: 12px; }
+    header h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(135deg, #6366f1, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+    .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 600; transition: all 0.15s; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .btn-secondary:hover { background: #334155; color: #e2e8f0; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tabs { display: flex; gap: 4px; background: #1e293b; padding: 4px; border-radius: 10px; margin-bottom: 24px; }
+    .tab { flex: 1; text-align: center; padding: 9px 12px; border-radius: 7px; cursor: pointer; font-size: 0.875rem; font-weight: 500; color: #64748b; transition: all 0.15s; border: none; background: none; }
+    .tab.active { background: #6366f1; color: #fff; }
+
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+    .card-title { font-size: 1rem; font-weight: 700; }
+    .card-sub { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+
+    .stat { font-size: 1.5rem; font-weight: 700; }
+    .stat-label { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+    .pos { color: #22c55e; }
+    .neg { color: #ef4444; }
+    .neutral { color: #94a3b8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { text-align: left; padding: 10px 12px; color: #64748b; font-weight: 600; border-bottom: 1px solid #334155; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; }
+    td { padding: 12px; border-bottom: 1px solid #1e293b; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #0f172a; }
+
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; letter-spacing: .05em; }
+    .badge-buy { background: #166534; color: #86efac; }
+    .badge-sell { background: #7f1d1d; color: #fca5a5; }
+    .badge-hold { background: #1e3a5f; color: #93c5fd; }
+
+    .select { background: #0f1117; border: 1px solid #334155; color: #e2e8f0; padding: 8px 12px; border-radius: 8px; font-size: 0.875rem; }
+
+    .loading { text-align: center; color: #64748b; padding: 40px; }
+    .error { background: #7f1d1d33; border: 1px solid #ef444466; border-radius: 8px; padding: 16px; color: #fca5a5; margin-bottom: 16px; font-size: 0.875rem; }
+
+    .strategy-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px; padding: 16px; background: #0f172a; border-radius: 10px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 0.75rem; color: #64748b; font-weight: 600; }
+
+    .signal-card { padding: 16px; border-radius: 10px; border: 1px solid #334155; }
+
+    @media (max-width: 600px) {
+      .tabs { overflow-x: auto; }
+      .tab { white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useCallback } = React;
+const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } = Recharts;
+
+const API = "http://localhost:8000";
+
+function fmt(n, decimals = 2) {
+  if (n == null) return "—";
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function fmtPct(n) {
+  if (n == null) return "—";
+  const v = Number(n).toFixed(2);
+  return (n > 0 ? "+" : "") + v + "%";
+}
+function pctClass(n) { return n == null ? "neutral" : n > 0 ? "pos" : n < 0 ? "neg" : "neutral"; }
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ── Markets Tab ──────────────────────────────────────────────────────────────
+function MarketsTab({ markets, loading, error, onIngest, ingesting }) {
+  const [selected, setSelected] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  const loadHistory = useCallback(async (symbol) => {
+    setHistLoading(true);
+    try {
+      const data = await api(`/history?symbol=${symbol}&limit=50`);
+      setHistory([...data].reverse());
+    } catch { setHistory([]); }
+    setHistLoading(false);
+  }, []);
+
+  const handleSelect = (sym) => {
+    setSelected(sym);
+    loadHistory(sym);
+  };
+
+  if (loading) return React.createElement("div", { className: "loading" }, "Loading markets…");
+
+  return React.createElement("div", null,
+    error && React.createElement("div", { className: "error" }, error),
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 } },
+      React.createElement("h2", { style: { fontSize: "1.1rem", fontWeight: 700 } }, "Top 10 Assets"),
+      React.createElement("button", { className: "btn btn-primary btn-sm", onClick: onIngest, disabled: ingesting },
+        ingesting ? "Fetching…" : "↻ Refresh Data")
+    ),
+    React.createElement("div", { className: "card", style: { marginBottom: 20, overflowX: "auto" } },
+      React.createElement("table", null,
+        React.createElement("thead", null,
+          React.createElement("tr", null,
+            ["Symbol", "Name", "Price (USD)", "Volume", "24h Change", ""].map(h =>
+              React.createElement("th", { key: h }, h)))),
+        React.createElement("tbody", null,
+          markets.map(m =>
+            React.createElement("tr", { key: m.symbol },
+              React.createElement("td", null, React.createElement("strong", null, m.symbol)),
+              React.createElement("td", null, m.name),
+              React.createElement("td", null, "$" + fmt(m.latest_price, m.latest_price > 100 ? 2 : 4)),
+              React.createElement("td", null, m.latest_volume ? "$" + Number(m.latest_volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"),
+              React.createElement("td", { className: pctClass(m.price_change_24h) }, fmtPct(m.price_change_24h)),
+              React.createElement("td", null,
+                React.createElement("button", { className: "btn btn-secondary btn-sm", onClick: () => handleSelect(m.symbol) }, "Chart"))
+            )
+          )
+        )
+      )
+    ),
+    selected && React.createElement("div", { className: "card" },
+      React.createElement("div", { className: "card-header" },
+        React.createElement("div", null,
+          React.createElement("div", { className: "card-title" }, selected + " Price History"),
+          React.createElement("div", { className: "card-sub" }, "Last 50 records")
+        ),
+        React.createElement("button", { className: "btn btn-secondary btn-sm", onClick: () => setSelected(null) }, "✕")
+      ),
+      histLoading
+        ? React.createElement("div", { className: "loading" }, "Loading…")
+        : history.length < 2
+          ? React.createElement("div", { className: "loading" }, "Not enough history. Refresh data a few times.")
+          : React.createElement(ResponsiveContainer, { width: "100%", height: 220 },
+              React.createElement(LineChart, { data: history },
+                React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#334155" }),
+                React.createElement(XAxis, { dataKey: "timestamp", tick: { fontSize: 10, fill: "#64748b" },
+                  tickFormatter: v => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" }) }),
+                React.createElement(YAxis, { tick: { fontSize: 10, fill: "#64748b" },
+                  tickFormatter: v => "$" + (v > 1000 ? (v/1000).toFixed(1)+"k" : v.toFixed(2)) }),
+                React.createElement(Tooltip, {
+                  contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 },
+                  formatter: (v) => ["$" + fmt(v, 4), "Price"],
+                  labelFormatter: v => new Date(v).toLocaleString()
+                }),
+                React.createElement(Line, { type: "monotone", dataKey: "price", stroke: "#6366f1", dot: false, strokeWidth: 2 })
+              )
+            )
+    )
+  );
+}
+
+// ── Analytics Tab ────────────────────────────────────────────────────────────
+function AnalyticsTab() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [window_, setWindow] = useState(7);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setData(await api(`/analytics?window=${window_}`)); } catch {}
+    setLoading(false);
+  }, [window_]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return React.createElement("div", { className: "loading" }, "Computing analytics…");
+
+  return React.createElement("div", null,
+    React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" } },
+      React.createElement("label", { className: "form-label" }, "Lookback window"),
+      React.createElement("select", { className: "select", value: window_, onChange: e => setWindow(Number(e.target.value)) },
+        [3, 7, 14, 30].map(v => React.createElement("option", { key: v, value: v }, v + " records"))
+      ),
+      React.createElement("button", { className: "btn btn-primary btn-sm", onClick: load }, "Recompute")
+    ),
+    React.createElement("div", { className: "card", style: { marginBottom: 20, overflowX: "auto" } },
+      React.createElement("table", null,
+        React.createElement("thead", null,
+          React.createElement("tr", null,
+            ["Rank", "Asset", "Price", "Price Δ%", "Volume Δ%", "Momentum"].map(h =>
+              React.createElement("th", { key: h }, h)))),
+        React.createElement("tbody", null,
+          data.map(a =>
+            React.createElement("tr", { key: a.symbol },
+              React.createElement("td", null, "#" + a.rank),
+              React.createElement("td", null, React.createElement("strong", null, a.symbol), " ", React.createElement("span", { style: { color: "#64748b", fontSize: "0.8em" } }, a.name)),
+              React.createElement("td", null, "$" + fmt(a.current_price, a.current_price > 100 ? 2 : 4)),
+              React.createElement("td", { className: pctClass(a.price_change_pct) }, fmtPct(a.price_change_pct)),
+              React.createElement("td", { className: pctClass(a.volume_change_pct) }, fmtPct(a.volume_change_pct)),
+              React.createElement("td", { className: pctClass(a.momentum_score) }, a.momentum_score != null ? fmt(a.momentum_score, 4) + "%" : "—")
+            )
+          )
+        )
+      )
+    ),
+    data.length > 0 && React.createElement("div", { className: "card" },
+      React.createElement("div", { className: "card-header" },
+        React.createElement("div", { className: "card-title" }, "Price & Volume Change (%)")
+      ),
+      React.createElement(ResponsiveContainer, { width: "100%", height: 250 },
+        React.createElement(BarChart, { data: data },
+          React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "#334155" }),
+          React.createElement(XAxis, { dataKey: "symbol", tick: { fontSize: 11, fill: "#94a3b8" } }),
+          React.createElement(YAxis, { tick: { fontSize: 10, fill: "#64748b" }, tickFormatter: v => v + "%" }),
+          React.createElement(Tooltip, { contentStyle: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8 },
+            formatter: (v, n) => [fmtPct(v), n] }),
+          React.createElement(Legend, { wrapperStyle: { fontSize: 12 } }),
+          React.createElement(Bar, { dataKey: "price_change_pct", name: "Price Δ%", fill: "#6366f1" }),
+          React.createElement(Bar, { dataKey: "volume_change_pct", name: "Volume Δ%", fill: "#06b6d4" })
+        )
+      )
+    )
+  );
+}
+
+// ── Strategy Tab ─────────────────────────────────────────────────────────────
+function StrategyTab() {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [strategy, setStrategy] = useState("moving_average");
+  const [windowShort, setWindowShort] = useState(7);
+  const [windowLong, setWindowLong] = useState(25);
+  const [ran, setRan] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadResults = async () => {
+    try { setResults(await api("/strategy/results")); setRan(true); } catch {}
+  };
+
+  useEffect(() => { loadResults(); }, []);
+
+  const runStrategy = async () => {
+    setLoading(true); setError("");
+    try {
+      const r = await api("/strategy/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategy, window_short: windowShort, window_long: windowLong }),
+      });
+      setResults(r); setRan(true);
+    } catch (e) { setError(e.message || "Strategy run failed"); }
+    setLoading(false);
+  };
+
+  const signalColor = s => ({ BUY: "#166534", SELL: "#7f1d1d", HOLD: "#1e3a5f" }[s] || "#1e293b");
+  const signalBorder = s => ({ BUY: "#22c55e", SELL: "#ef4444", HOLD: "#3b82f6" }[s] || "#334155");
+  const badgeClass = s => "badge badge-" + (s || "hold").toLowerCase();
+
+  return React.createElement("div", null,
+    error && React.createElement("div", { className: "error" }, error),
+    React.createElement("div", { className: "strategy-controls" },
+      React.createElement("div", { className: "form-group" },
+        React.createElement("label", { className: "form-label" }, "Strategy"),
+        React.createElement("select", { className: "select", value: strategy, onChange: e => setStrategy(e.target.value) },
+          React.createElement("option", { value: "moving_average" }, "Moving Average Crossover"),
+          React.createElement("option", { value: "momentum" }, "Momentum Threshold")
+        )
+      ),
+      strategy === "moving_average" && React.createElement(React.Fragment, null,
+        React.createElement("div", { className: "form-group" },
+          React.createElement("label", { className: "form-label" }, "Short Window"),
+          React.createElement("input", { type: "number", className: "select", value: windowShort, min: 2, max: 50,
+            onChange: e => setWindowShort(Number(e.target.value)), style: { width: 80 } })
+        ),
+        React.createElement("div", { className: "form-group" },
+          React.createElement("label", { className: "form-label" }, "Long Window"),
+          React.createElement("input", { type: "number", className: "select", value: windowLong, min: 5, max: 200,
+            onChange: e => setWindowLong(Number(e.target.value)), style: { width: 80 } })
+        )
+      ),
+      React.createElement("button", { className: "btn btn-primary", onClick: runStrategy, disabled: loading },
+        loading ? "Running…" : "▶ Run Strategy")
+    ),
+    !ran && results.length === 0
+      ? React.createElement("div", { className: "loading" }, "Run a strategy to see signals.")
+      : React.createElement("div", null,
+          React.createElement("h3", { style: { marginBottom: 16, fontSize: "1rem", color: "#94a3b8" } }, "Latest Signals"),
+          React.createElement("div", { className: "grid grid-3" },
+            results.map(r =>
+              React.createElement("div", { key: r.symbol, className: "signal-card",
+                style: { background: signalColor(r.signal), borderColor: signalBorder(r.signal) } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 } },
+                  React.createElement("div", null,
+                    React.createElement("div", { style: { fontWeight: 700 } }, r.symbol),
+                    React.createElement("div", { style: { fontSize: "0.75rem", color: "#64748b" } }, r.name)
+                  ),
+                  React.createElement("span", { className: badgeClass(r.signal) }, r.signal)
+                ),
+                React.createElement("div", { style: { fontSize: "0.8rem", color: "#94a3b8", marginBottom: 8 } }, r.reason),
+                React.createElement("div", { style: { fontSize: "0.75rem", color: "#64748b" } }, "@ $" + fmt(r.price_at_signal, 4))
+              )
+            )
+          )
+        )
+  );
+}
+
+// ── App Shell ────────────────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState("markets");
+  const [markets, setMarkets] = useState([]);
+  const [marketsLoading, setMarketsLoading] = useState(true);
+  const [marketsError, setMarketsError] = useState("");
+  const [ingesting, setIngesting] = useState(false);
+
+  const loadMarkets = useCallback(async () => {
+    setMarketsLoading(true); setMarketsError("");
+    try { setMarkets(await api("/markets")); }
+    catch { setMarketsError("Failed to connect. Is the backend running on port 8000?"); }
+    setMarketsLoading(false);
+  }, []);
+
+  const handleIngest = async () => {
+    setIngesting(true);
+    try { await api("/ingest", { method: "POST" }); await loadMarkets(); }
+    catch (e) { setMarketsError(e.message); }
+    setIngesting(false);
+  };
+
+  useEffect(() => { loadMarkets(); }, [loadMarkets]);
+
+  const tabs = [
+    { id: "markets", label: "📈 Markets" },
+    { id: "analytics", label: "🔬 Analytics" },
+    { id: "strategy", label: "🤖 Strategy" },
+  ];
+
+  return React.createElement("div", null,
+    React.createElement("header", null,
+      React.createElement("h1", null, "⚡ Crypto Analytics"),
+      React.createElement("span", { style: { fontSize: "0.75rem", color: "#475569" } }, "Powered by CoinGecko")
+    ),
+    React.createElement("div", { className: "tabs" },
+      tabs.map(t =>
+        React.createElement("button", { key: t.id, className: "tab" + (tab === t.id ? " active" : ""),
+          onClick: () => setTab(t.id) }, t.label)
+      )
+    ),
+    tab === "markets" && React.createElement(MarketsTab, { markets, loading: marketsLoading, error: marketsError, onIngest: handleIngest, ingesting }),
+    tab === "analytics" && React.createElement(AnalyticsTab),
+    tab === "strategy" && React.createElement(StrategyTab)
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
