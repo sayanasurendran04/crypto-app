@@ -8,4 +8,4 @@ The frontend is a responsive single-page React application (no build step requir
 
 ---
 
-Want me to adjust the tone (more technical, more concise, etc.) or tailor it for a specific audience?
+
